@@ -1,3 +1,5 @@
+#!/usr/local/python_dpr/bin/python
+
 ############################################################################
 # Copyright(c) Open Law Library. All rights reserved.                      #
 # See ThirdPartyNotices.txt in the project root for additional notices.    #
@@ -16,10 +18,12 @@
 ############################################################################
 import argparse
 import logging
+import sys
+import os
 
-from .server import json_server
+from ltls_server import json_server
 
-logging.basicConfig(filename="pygls.log", level=logging.DEBUG, filemode="w")
+logging.basicConfig(filename="pyltls.log", level=logging.DEBUG, filemode="w")
 
 
 def add_arguments(parser):
