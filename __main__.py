@@ -21,13 +21,13 @@ import logging
 import sys
 import os
 
-from ltls_server import json_server
+from ltls_server import ltls_server
 
 logging.basicConfig(filename="pyltls.log", level=logging.DEBUG, filemode="w")
 
 
 def add_arguments(parser):
-    parser.description = "simple json server example"
+    parser.description = "LanguageTool language server"
 
     parser.add_argument(
         "--tcp", action="store_true",
@@ -38,7 +38,7 @@ def add_arguments(parser):
         help="Bind to this address"
     )
     parser.add_argument(
-        "--port", type=int, default=2087,
+        "--port", type=int, default=9020,
         help="Bind to this port"
     )
 
@@ -49,9 +49,9 @@ def main():
     args = parser.parse_args()
 
     if args.tcp:
-        json_server.start_tcp(args.host, args.port)
+        ltls_server.start_tcp(args.host, args.port)
     else:
-        json_server.start_io()
+        ltls_server.start_io()
 
 
 if __name__ == '__main__':
