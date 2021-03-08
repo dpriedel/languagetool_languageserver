@@ -20,8 +20,9 @@ import subprocess
 import requests
 
 import time
-# import uuid
+import uuid
 import json
+from urllib.parse import urlparse
 
 from pygls.features import (TEXT_DOCUMENT_DID_CHANGE, TEXT_DOCUMENT_DID_SAVE,
                             TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
@@ -47,6 +48,9 @@ class LanguageToolLanguageServer(LanguageServer):
 
         self.languagetool = None
         try:
+            # we need to capture stdout, stderr because the languagetool server
+            # emits several messages and we don't want them to go to the LSP client.
+
             self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http"],
                                                  stdin=subprocess.PIPE,
                                                  stdout=subprocess.PIPE,
@@ -55,7 +59,7 @@ class LanguageToolLanguageServer(LanguageServer):
             time.sleep(3.0)         # we need to give some time for the server to start.
             # outs, errs = self.languagetool.communicate()
         except Exception as e:
-            show_message('Error ocurred: {}'.format(e))
+            self.show_message('Error ocurred: {}'.format(e))
 
     def __del__(self):
         self.languagetool.kill()
@@ -125,10 +129,12 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, results: 
 
 
 # TEXT_DOCUMENT_DID_SAVE
-@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, includeText=True)
+@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
 async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
-    doc_content = params.text
+    xxx = urlparse(params.textDocument.uri, scheme="file")
+
+    doc_content = open(xxx.path, mode='r', encoding='utf-8').read()
     payload = {'language': 'en-US', 'text': doc_content}
 
     try:
@@ -168,7 +174,6 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
         _publish_diagnostics(server, params.textDocument.uri, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
-
 
 
 @ltls_server.command(LanguageToolLanguageServer.CMD_SHOW_CONFIGURATION_ASYNC)
@@ -226,4 +231,3 @@ def show_configuration_thread(ls: LanguageToolLanguageServer, *args):
 
     except Exception as e:
         ls.show_message_log('Error ocurred: {}'.format(e))
-
