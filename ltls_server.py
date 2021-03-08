@@ -21,12 +21,13 @@ import requests
 
 import time
 # import uuid
-from json import JSONDecodeError
+import json
 
 from pygls.features import (TEXT_DOCUMENT_DID_CHANGE, TEXT_DOCUMENT_DID_SAVE,
                             TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
 from pygls.server import LanguageServer
 from pygls.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
+                         DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
                          DidChangeTextDocumentParams, DidSaveTextDocumentParams,
                          DidCloseTextDocumentParams, DidOpenTextDocumentParams,
                          MessageType, Position, Range, Registration,
@@ -44,11 +45,21 @@ class LanguageToolLanguageServer(LanguageServer):
     def __init__(self):
         super().__init__()
 
-        lt_server = subprocess.Popen(["/usr/bin/languagetool", "--http"])
-        time.sleep(3.0)         # we need to give some time for the server to start.
+        self.languagetool = None
+        try:
+            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http"],
+                                                 stdin=subprocess.PIPE,
+                                                 stdout=subprocess.PIPE,
+                                                 stderr=subprocess.PIPE
+                                                 )
+            time.sleep(3.0)         # we need to give some time for the server to start.
+            # outs, errs = self.languagetool.communicate()
+        except Exception as e:
+            show_message('Error ocurred: {}'.format(e))
 
     def __del__(self):
-        lt_server.kill()
+        self.languagetool.kill()
+        outs, errs = self.languagetool.communicate()
 
 
 ltls_server = LanguageToolLanguageServer()
@@ -90,45 +101,74 @@ def _validate_text(source):
     return diagnostics
 
 
-def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str):
-    """Helper function to publish diagnostics for a file."""
+def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, results: dict):
+    """Helper function to publish diagnostics for a file.
+        results is already in json format from requests library."""
     # document = server.workspace.get_document(uri)
     # jedi_script = jedi_utils.script(server.project, document)
     # errors = jedi_script.get_syntax_errors()
     # diagnostics = [jedi_utils.lsp_diagnostic(error) for error in errors]
-    diagnostics = ['']
-    server.publish_diagnostics(uri, diagnostics)
+    diagnostics = []
+    for error in results["matches"]:
+        d = Diagnostic(
+                range=Range(
+                            start=Position(0, int(error["offset"])),
+                            end=Position(0, int(error["offset"]) + int(error["length"]))
+                         ),
+                message=error["message"] + ' ' + error["rule"]["id"],
+                severity=DiagnosticSeverity.Error,
+                source="ltls"
+             )
+        diagnostics.append(d)
+    if diagnostics:
+        server.publish_diagnostics(uri, diagnostics)
 
 
 # TEXT_DOCUMENT_DID_SAVE
-@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
-def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
+@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, includeText=True)
+async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
-    _publish_diagnostics(server, params.textDocument.uri)
+    doc_content = params.text
+    payload = {'language': 'en-US', 'text': doc_content}
+
+    try:
+        r = requests.get(r'http://localhost:8081/v2/check', params=payload)
+        results = r.json()
+        _publish_diagnostics(server, params.textDocument.uri, results)
+    except Exception as e:
+        server.show_message('Error ocurred: {}'.format(e))
 
 
 # TEXT_DOCUMENT_DID_CHANGE
 @ltls_server.feature(TEXT_DOCUMENT_DID_CHANGE)
-def did_change(
-    server: LanguageToolLanguageServer, params: DidChangeTextDocumentParams
-):
+def did_change(server: LanguageToolLanguageServer, params: DidChangeTextDocumentParams):
     """Actions run on textDocument/didChange."""
-    _publish_diagnostics(server, params.textDocument.uri)
+    # doc_content = params.contentChanges.
+    # payload = {'language': 'en-US', 'text': doc_content}
+
+    # try:
+    #     r = requests.get(r'http://localhost:8081/v2/check', params=payload)
+    #     results = r.json()
+    #     _publish_diagnostics(server, params.textDocument.uri, results)
+    # except Exception as e:
+    #     server.show_message('Error ocurred: {}'.format(e))
+    _publish_diagnostics(server, params.textDocument.uri, {})
 
 
 # TEXT_DOCUMENT_DID_OPEN
 @ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
-def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
+async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
     doc_content = params.textDocument.text
     payload = {'language': 'en-US', 'text': doc_content}
 
-    # try:
-    r = requests.get(r'http://localhost:8081/v2/check', params=payload)
-    # except:
-    #     pass
+    try:
+        r = requests.get(r'http://localhost:8081/v2/check', params=payload)
+        results = r.json()
+        _publish_diagnostics(server, params.textDocument.uri, results)
+    except Exception as e:
+        server.show_message('Error ocurred: {}'.format(e))
 
-    _publish_diagnostics(server, params.textDocument.uri)
 
 
 @ltls_server.command(LanguageToolLanguageServer.CMD_SHOW_CONFIGURATION_ASYNC)
