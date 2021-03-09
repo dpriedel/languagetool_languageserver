@@ -20,26 +20,22 @@ import subprocess
 import requests
 
 import time
-import uuid
-import json
+
 from urllib.parse import urlparse
 
-from pygls.features import (TEXT_DOCUMENT_DID_CHANGE, TEXT_DOCUMENT_DID_SAVE,
+from pygls.features import (TEXT_DOCUMENT_DID_SAVE,
                             TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
 from pygls.server import LanguageServer
 from pygls.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                          DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
-                         DidChangeTextDocumentParams, DidSaveTextDocumentParams,
+                         DidSaveTextDocumentParams,
                          DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-                         MessageType, Position, Range, Registration,
+                         MessageType, Position, Range, Registration, 
                          RegistrationParams, Unregistration,
                          UnregistrationParams)
 
 
 class LanguageToolLanguageServer(LanguageServer):
-    CMD_SHOW_CONFIGURATION_ASYNC = 'showConfigurationAsync'
-    CMD_SHOW_CONFIGURATION_CALLBACK = 'showConfigurationCallback'
-    CMD_SHOW_CONFIGURATION_THREAD = 'showConfigurationThread'
 
     CONFIGURATION_SECTION = 'ltlsServer'
 
@@ -69,42 +65,6 @@ class LanguageToolLanguageServer(LanguageServer):
 ltls_server = LanguageToolLanguageServer()
 
 
-def _validate(ls, params):
-    ls.show_message_log('Validating text...')
-
-    text_doc = ls.workspace.get_document(params.textDocument.uri)
-
-    source = text_doc.source
-    diagnostics = _validate_text(source) if source else []
-
-    ls.publish_diagnostics(text_doc.uri, diagnostics)
-
-
-def _validate_text(source):
-    """Validates text file."""
-    diagnostics = []
-
-    # try:
-    #     json.loads(source)
-    # except JSONDecodeError as err:
-    #     msg = err.msg
-    #     col = err.colno
-    #     line = err.lineno
-
-    #     d = Diagnostic(
-    #         Range(
-    #             Position(line - 1, col - 1),
-    #             Position(line - 1, col)
-    #         ),
-    #         msg,
-    #         source=type(ltls_server).__name__
-    #     )
-
-    #     diagnostics.append(d)
-
-    return diagnostics
-
-
 def _find_line_ends(content: str):
     """ make a list of line end offsets to be used when converting
         an offset into line and column."""
@@ -122,9 +82,8 @@ def _find_line_ends(content: str):
     return results
 
 
-def _convert_offset_to_line_col(offsets: list[int], offset: int):
-    """ just as it says, translate a zero-based offset to a
-        one-based line and column."""
+def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, int]:
+    """ just as it says, translate a zero-based offset to a line and column."""
 
     line: int = 0
     col: int = 0
@@ -146,10 +105,7 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int):
 def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_content: str, results: dict):
     """Helper function to publish diagnostics for a file.
         results is already in json format from requests library."""
-    # document = server.workspace.get_document(uri)
-    # jedi_script = jedi_utils.script(server.project, document)
-    # errors = jedi_script.get_syntax_errors()
-    # diagnostics = [jedi_utils.lsp_diagnostic(error) for error in errors]
+
     offsets = _find_line_ends(doc_content)
 
     diagnostics = []
@@ -159,7 +115,7 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
         d = Diagnostic(
                 range=Range(
                             start=Position(line, col),
-                            end=Position(line, col + int(error["length"]) - 1)
+                            end=Position(line, col + int(error["length"]))
                          ),
                 message=error["message"] + ' ' + error["rule"]["id"],
                 severity=DiagnosticSeverity.Error,
@@ -187,22 +143,6 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
         server.show_message('Error ocurred: {}'.format(e))
 
 
-# TEXT_DOCUMENT_DID_CHANGE
-@ltls_server.feature(TEXT_DOCUMENT_DID_CHANGE)
-def did_change(server: LanguageToolLanguageServer, params: DidChangeTextDocumentParams):
-    """Actions run on textDocument/didChange."""
-    # doc_content = params.contentChanges.
-    # payload = {'language': 'en-US', 'text': doc_content}
-
-    # try:
-    #     r = requests.get(r'http://localhost:8081/v2/check', params=payload)
-    #     results = r.json()
-    #     _publish_diagnostics(server, params.textDocument.uri, results)
-    # except Exception as e:
-    #     server.show_message('Error ocurred: {}'.format(e))
-    _publish_diagnostics(server, params.textDocument.uri, "", {})
-
-
 # TEXT_DOCUMENT_DID_OPEN
 @ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
 async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
@@ -216,60 +156,3 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
         _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
-
-
-@ltls_server.command(LanguageToolLanguageServer.CMD_SHOW_CONFIGURATION_ASYNC)
-async def show_configuration_async(ls: LanguageToolLanguageServer, *args):
-    """Gets exampleConfiguration from the client settings using coroutines."""
-    try:
-        config = await ls.get_configuration_async(ConfigurationParams([
-            ConfigurationItem('', LanguageToolLanguageServer.CONFIGURATION_SECTION)
-        ]))
-
-        example_config = config[0].exampleConfiguration
-
-        ls.show_message(
-            'ltlsServer.exampleConfiguration value: {}'.format(example_config)
-        )
-
-    except Exception as e:
-        ls.show_message_log('Error ocurred: {}'.format(e))
-
-
-@ltls_server.command(LanguageToolLanguageServer.CMD_SHOW_CONFIGURATION_CALLBACK)
-def show_configuration_callback(ls: LanguageToolLanguageServer, *args):
-    """Gets exampleConfiguration from the client settings using callback."""
-    def _config_callback(config):
-        try:
-            example_config = config[0].exampleConfiguration
-
-            ls.show_message(
-                'ltlsServer.exampleConfiguration value: {}'
-                .format(example_config)
-            )
-
-        except Exception as e:
-            ls.show_message_log('Error ocurred: {}'.format(e))
-
-    ls.get_configuration(ConfigurationParams([
-        ConfigurationItem('', LanguageToolLanguageServer.CONFIGURATION_SECTION)
-    ]), _config_callback)
-
-
-@ltls_server.thread()
-@ltls_server.command(LanguageToolLanguageServer.CMD_SHOW_CONFIGURATION_THREAD)
-def show_configuration_thread(ls: LanguageToolLanguageServer, *args):
-    """Gets exampleConfiguration from the client settings using thread pool."""
-    try:
-        config = ls.get_configuration(ConfigurationParams([
-            ConfigurationItem('', LanguageToolLanguageServer.CONFIGURATION_SECTION)
-        ])).result(2)
-
-        example_config = config[0].exampleConfiguration
-
-        ls.show_message(
-            'ltlsServer.exampleConfiguration value: {}'.format(example_config)
-        )
-
-    except Exception as e:
-        ls.show_message_log('Error ocurred: {}'.format(e))
