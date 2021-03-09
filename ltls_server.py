@@ -105,19 +105,61 @@ def _validate_text(source):
     return diagnostics
 
 
-def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, results: dict):
+def _find_line_ends(content: str):
+    """ make a list of line end offsets to be used when converting
+        an offset into line and column."""
+
+    results: list[int] = []
+
+    loc = -1
+    while True:
+        loc = content.find('\n', loc + 1)
+        if loc > -1:
+            results.append(loc)
+        else:
+            break
+
+    return results
+
+
+def _convert_offset_to_line_col(offsets: list[int], offset: int):
+    """ just as it says, translate a zero-based offset to a
+        one-based line and column."""
+
+    line: int = 0
+    col: int = 0
+
+    try:
+        while (yyy := offsets[line]) < offset:
+            line += 1
+    except IndexError as e:
+        pass
+
+    if line > 0:
+        col = offset - offsets[line - 1]
+    else:
+        col = offset + 1
+
+    return(line, col - 1)
+
+
+def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_content: str, results: dict):
     """Helper function to publish diagnostics for a file.
         results is already in json format from requests library."""
     # document = server.workspace.get_document(uri)
     # jedi_script = jedi_utils.script(server.project, document)
     # errors = jedi_script.get_syntax_errors()
     # diagnostics = [jedi_utils.lsp_diagnostic(error) for error in errors]
+    offsets = _find_line_ends(doc_content)
+
     diagnostics = []
     for error in results["matches"]:
+        offset = int(error["offset"])
+        line, col = _convert_offset_to_line_col(offsets, offset)
         d = Diagnostic(
                 range=Range(
-                            start=Position(0, int(error["offset"])),
-                            end=Position(0, int(error["offset"]) + int(error["length"]))
+                            start=Position(line, col),
+                            end=Position(line, col + int(error["length"]) - 1)
                          ),
                 message=error["message"] + ' ' + error["rule"]["id"],
                 severity=DiagnosticSeverity.Error,
@@ -140,7 +182,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
         results = r.json()
-        _publish_diagnostics(server, params.textDocument.uri, results)
+        _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
@@ -158,7 +200,7 @@ def did_change(server: LanguageToolLanguageServer, params: DidChangeTextDocument
     #     _publish_diagnostics(server, params.textDocument.uri, results)
     # except Exception as e:
     #     server.show_message('Error ocurred: {}'.format(e))
-    _publish_diagnostics(server, params.textDocument.uri, {})
+    _publish_diagnostics(server, params.textDocument.uri, "", {})
 
 
 # TEXT_DOCUMENT_DID_OPEN
@@ -171,7 +213,7 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
         results = r.json()
-        _publish_diagnostics(server, params.textDocument.uri, results)
+        _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
