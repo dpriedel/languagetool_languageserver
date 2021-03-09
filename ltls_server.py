@@ -122,8 +122,7 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
                 source="ltls"
              )
         diagnostics.append(d)
-    if diagnostics:
-        server.publish_diagnostics(uri, diagnostics)
+    server.publish_diagnostics(uri, diagnostics)
 
 
 # TEXT_DOCUMENT_DID_SAVE
@@ -133,7 +132,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
     xxx = urlparse(params.textDocument.uri, scheme="file")
 
     doc_content = open(xxx.path, mode='r', encoding='utf-8').read()
-    payload = {'language': 'en-US', 'text': doc_content}
+    payload = {'language': 'en', 'text': doc_content}
 
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
@@ -148,7 +147,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
 async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
     doc_content = params.textDocument.text
-    payload = {'language': 'en-US', 'text': doc_content}
+    payload = {'language': 'en', 'text': doc_content}
 
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
