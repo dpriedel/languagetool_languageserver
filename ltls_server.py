@@ -14,6 +14,10 @@
 # See the License for the specific language governing permissions and      #
 # limitations under the License.                                           #
 ############################################################################
+import argparse
+import logging
+import sys
+import os
 import asyncio
 import json
 import subprocess
@@ -30,39 +34,11 @@ from pygls.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                          DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
                          DidSaveTextDocumentParams,
                          DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-                         MessageType, Position, Range, Registration, 
+                         MessageType, Position, Range, Registration,
                          RegistrationParams, Unregistration,
                          UnregistrationParams)
 
-
-class LanguageToolLanguageServer(LanguageServer):
-
-    CONFIGURATION_SECTION = 'ltlsServer'
-
-    def __init__(self):
-        super().__init__()
-
-        self.languagetool = None
-        try:
-            # we need to capture stdout, stderr because the languagetool server
-            # emits several messages and we don't want them to go to the LSP client.
-
-            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http"],
-                                                 stdin=subprocess.PIPE,
-                                                 stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE
-                                                 )
-            time.sleep(3.0)         # we need to give some time for the server to start.
-            # outs, errs = self.languagetool.communicate()
-        except Exception as e:
-            self.show_message('Error ocurred: {}'.format(e))
-
-    def __del__(self):
-        self.languagetool.kill()
-        outs, errs = self.languagetool.communicate()
-
-
-ltls_server = LanguageToolLanguageServer()
+logging.basicConfig(filename="pyltls.log", level=logging.DEBUG, filemode="w")
 
 
 def _find_line_ends(content: str):
@@ -100,6 +76,36 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, i
         col = offset + 1
 
     return(line, col - 1)
+
+
+class LanguageToolLanguageServer(LanguageServer):
+
+    CONFIGURATION_SECTION = 'ltlsServer'
+
+    def __init__(self):
+        super().__init__()
+
+        self.languagetool = None
+        try:
+            # we need to capture stdout, stderr because the languagetool server
+            # emits several messages and we don't want them to go to the LSP client.
+
+            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http"],
+                                                 stdin=subprocess.PIPE,
+                                                 stdout=subprocess.PIPE,
+                                                 stderr=subprocess.PIPE
+                                                 )
+            time.sleep(3.0)         # we need to give some time for the server to start.
+            # outs, errs = self.languagetool.communicate()
+        except Exception as e:
+            self.show_message('Error ocurred: {}'.format(e))
+
+    def __del__(self):
+        self.languagetool.kill()
+        outs, errs = self.languagetool.communicate()
+
+
+ltls_server = LanguageToolLanguageServer()
 
 
 def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_content: str, results: dict):
@@ -155,3 +161,35 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
         _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
+
+
+def add_arguments(parser):
+    parser.description = "LanguageTool language server"
+
+    parser.add_argument(
+        "--tcp", action="store_true",
+        help="Use TCP server instead of stdio"
+    )
+    parser.add_argument(
+        "--host", default="127.0.0.1",
+        help="Bind to this address"
+    )
+    parser.add_argument(
+        "--port", type=int, default=9020,
+        help="Bind to this port"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    args = parser.parse_args()
+
+    if args.tcp:
+        ltls_server.start_tcp(args.host, args.port)
+    else:
+        ltls_server.start_io()
+
+
+if __name__ == '__main__':
+    main()
