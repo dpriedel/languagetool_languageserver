@@ -90,7 +90,8 @@ class LanguageToolLanguageServer(LanguageServer):
             # we need to capture stdout, stderr because the languagetool server
             # emits several messages and we don't want them to go to the LSP client.
 
-            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http"],
+            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http",
+                                                  "--languageModel", "/util/langtool_ngrams"],
                                                  stdin=subprocess.PIPE,
                                                  stdout=subprocess.PIPE,
                                                  stderr=subprocess.PIPE
