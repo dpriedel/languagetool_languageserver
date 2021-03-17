@@ -38,10 +38,10 @@ from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                              UnregistrationParams)
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="pyltls.log", level=logging.DEBUG, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.WARNING, filemode="w")
 
 
-def find_next_line_end(content: str):
+def _find_next_line_end(content: str):
     loc: int = content.find('\n')
     while loc > -1:
         yield loc
@@ -52,7 +52,7 @@ def _find_line_ends(content: str):
     """ make a list of line end offsets to be used when converting
         an offset into line and column."""
 
-    results: list[int] = [loc for loc in find_next_line_end(content)]
+    results: list[int] = [loc for loc in _find_next_line_end(content)]
     return results
 
 
