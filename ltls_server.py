@@ -41,18 +41,13 @@ from pygls.server import LanguageServer
 logging.basicConfig(filename="/tmp/pyltls.log", level=logging.WARNING, filemode="w")
 
 
-def _find_next_line_end(content: str):
+def _find_line_ends(content: str):
+    results: list[int] = []
     loc: int = content.find('\n')
     while loc > -1:
-        yield loc
+        results.append(loc)
         loc = content.find('\n', loc + 1)
 
-
-def _find_line_ends(content: str):
-    """ make a list of line end offsets to be used when converting
-        an offset into line and column."""
-
-    results: list[int] = [loc for loc in _find_next_line_end(content)]
     return results
 
 
@@ -68,10 +63,7 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, i
     except IndexError as e:
         pass
 
-    if line > 0:
-        col = offset - offsets[line - 1]
-    else:
-        col = offset + 1
+    col = offset - offsets[line - 1] if line > 0 else offset + 1
 
     return(line, col - 1)
 
