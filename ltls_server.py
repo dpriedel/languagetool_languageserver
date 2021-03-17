@@ -27,34 +27,32 @@ import time
 
 from urllib.parse import urlparse
 
-from pygls.features import (TEXT_DOCUMENT_DID_SAVE,
-                            TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
+from pygls.lsp.methods import (TEXT_DOCUMENT_DID_SAVE,
+                               TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
+from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
+                             DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
+                             DidSaveTextDocumentParams,
+                             DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+                             MessageType, Position, Range, Registration,
+                             RegistrationParams, Unregistration,
+                             UnregistrationParams)
 from pygls.server import LanguageServer
-from pygls.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
-                         DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
-                         DidSaveTextDocumentParams,
-                         DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-                         MessageType, Position, Range, Registration,
-                         RegistrationParams, Unregistration,
-                         UnregistrationParams)
 
 logging.basicConfig(filename="pyltls.log", level=logging.DEBUG, filemode="w")
+
+
+def find_next_line_end(content: str):
+    loc: int = content.find('\n')
+    while loc > -1:
+        yield loc
+        loc = content.find('\n', loc + 1)
 
 
 def _find_line_ends(content: str):
     """ make a list of line end offsets to be used when converting
         an offset into line and column."""
 
-    results: list[int] = []
-
-    loc = -1
-    while True:
-        loc = content.find('\n', loc + 1)
-        if loc > -1:
-            results.append(loc)
-        else:
-            break
-
+    results: list[int] = [loc for loc in find_next_line_end(content)]
     return results
 
 
@@ -65,7 +63,7 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, i
     col: int = 0
 
     try:
-        while (yyy := offsets[line]) < offset:
+        while offsets[line] < offset:
             line += 1
     except IndexError as e:
         pass
@@ -91,7 +89,8 @@ class LanguageToolLanguageServer(LanguageServer):
             # emits several messages and we don't want them to go to the LSP client.
 
             self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http",
-                                                  "--languageModel", "/util/langtool_ngrams"],
+                                                  # "--languageModel", "/util/langtool_ngrams",
+                                                  "--word2vecModel", "/usr/share/word2vec/"],
                                                  stdin=subprocess.PIPE,
                                                  stdout=subprocess.PIPE,
                                                  stderr=subprocess.PIPE
@@ -121,8 +120,8 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
         line, col = _convert_offset_to_line_col(offsets, offset)
         d = Diagnostic(
                 range=Range(
-                            start=Position(line, col),
-                            end=Position(line, col + int(error["length"]))
+                            start=Position(line=line, character=col),
+                            end=Position(line=line, character=col + int(error["length"]))
                          ),
                 message=error["message"] + ' ' + error["rule"]["id"],
                 severity=DiagnosticSeverity.Error,
@@ -136,7 +135,7 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
 @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
 async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
-    xxx = urlparse(params.textDocument.uri, scheme="file")
+    xxx = urlparse(params.text_document.uri, scheme="file")
 
     doc_content = open(xxx.path, mode='r', encoding='utf-8').read()
     payload = {'language': 'en', 'text': doc_content}
@@ -144,7 +143,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
         results = r.json()
-        _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
+        _publish_diagnostics(server, params.text_document.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
@@ -153,13 +152,13 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
 @ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
 async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
-    doc_content = params.textDocument.text
+    doc_content = params.text_document.text
     payload = {'language': 'en', 'text': doc_content}
 
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
         results = r.json()
-        _publish_diagnostics(server, params.textDocument.uri, doc_content, results)
+        _publish_diagnostics(server, params.text_document.uri, doc_content, results)
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
