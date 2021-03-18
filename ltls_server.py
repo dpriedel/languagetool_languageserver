@@ -75,26 +75,41 @@ class LanguageToolLanguageServer(LanguageServer):
     def __init__(self):
         super().__init__()
 
-        self.languagetool = None
+        self.languagetool_: subprocess.Popen = None
+        self.language_ = None
+
+    def __del__(self):
+        self.languagetool_.kill()
+        outs, errs = self.languagetool_.communicate()
+
+    def StartLanguageTool(self, args):
         try:
             # we need to capture stdout, stderr because the languagetool server
             # emits several messages and we don't want them to go to the LSP client.
 
-            self.languagetool = subprocess.Popen(["/usr/bin/languagetool", "--http",
-                                                  # "--languageModel", "/util/langtool_ngrams",
-                                                  "--word2vecModel", "/usr/share/word2vec/"],
-                                                 stdin=subprocess.PIPE,
-                                                 stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE
-                                                 )
+            self.language_ = args.language_
+            command_and_args: list[str] = [args.command_, "--http"]
+            # if args.port_ != 8081:
+            #     command_and_args.append("-p")
+            #     command_and_args.append(args.port_)
+            if args.languageModel_:
+                command_and_args.append("--languageModel")
+                command_and_args.append(args.languageModel_)
+            if args.word2vecModel_:
+                command_and_args.append("--word2vecModel")
+                command_and_args.append(args.word2vecModel_)
+
+            self.languagetool_ = subprocess.Popen(command_and_args,
+                                                  stdin=subprocess.PIPE,
+                                                  stdout=subprocess.PIPE,
+                                                  stderr=subprocess.PIPE
+                                                  )
             time.sleep(3.0)         # we need to give some time for the server to start.
-            # outs, errs = self.languagetool.communicate()
+            # outs, errs = self.languagetool_.communicate()
         except Exception as e:
             self.show_message('Error ocurred: {}'.format(e))
 
-    def __del__(self):
-        self.languagetool.kill()
-        outs, errs = self.languagetool.communicate()
+        self.start_io()
 
 
 ltls_server = LanguageToolLanguageServer()
@@ -130,7 +145,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
     xxx = urlparse(params.text_document.uri, scheme="file")
 
     doc_content = open(xxx.path, mode='r', encoding='utf-8').read()
-    payload = {'language': 'en', 'text': doc_content}
+    payload = {'language': server.language_, 'text': doc_content}
 
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
@@ -145,7 +160,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
 async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
     doc_content = params.text_document.text
-    payload = {'language': 'en', 'text': doc_content}
+    payload = {'language': server.language_, 'text': doc_content}
 
     try:
         r = requests.get(r'http://localhost:8081/v2/check', params=payload)
@@ -156,20 +171,28 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
 
 
 def add_arguments(parser):
-    parser.description = "LanguageTool language server"
+    parser.description = "LanguageTool language http server on local host."
 
     parser.add_argument(
-        "--tcp", action="store_true",
-        help="Use TCP server instead of stdio"
+        "-l", "--language", type=str, dest="language_", default="en",
+        help="Which language to use. Default is 'en'. Use 'en-US' for spell checking."
     )
     parser.add_argument(
-        "--host", default="127.0.0.1",
-        help="Bind to this address"
+        "-c", "--command", type=str, dest="command_", default="/usr/bin/languagetool",
+        help="command to run language tool. Default is '/usr/bin/languagetool'."
     )
     parser.add_argument(
-        "--port", type=int, default=9020,
-        help="Bind to this port"
+        "--languageModel", type=str, dest="languageModel_", default="",
+        help="Optional directory containing 'n-grams'."
     )
+    parser.add_argument(
+        "--word2vecModel", type=str, dest="word2vecModel_", default="",
+        help="Optional directory containing word2vec neural net data."
+    )
+    # parser.add_argument(
+    #     "-p", "--port", type=int, dest="port_", default=8081,
+    #     help="Use this port for LanguageTool. Default is 8081. "
+    # )
 
 
 def main():
@@ -177,10 +200,7 @@ def main():
     add_arguments(parser)
     args = parser.parse_args()
 
-    if args.tcp:
-        ltls_server.start_tcp(args.host, args.port)
-    else:
-        ltls_server.start_io()
+    ltls_server.StartLanguageTool(args)
 
 
 if __name__ == '__main__':
