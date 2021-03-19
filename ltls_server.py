@@ -76,7 +76,8 @@ class LanguageToolLanguageServer(LanguageServer):
         super().__init__()
 
         self.languagetool_: subprocess.Popen = None
-        self.language_ = None
+        self.language_: str = None
+        self.port_: str = None
 
     def __del__(self):
         self.languagetool_.kill()
@@ -88,10 +89,12 @@ class LanguageToolLanguageServer(LanguageServer):
             # emits several messages and we don't want them to go to the LSP client.
 
             self.language_ = args.language_
+            self.port_ = args.port_
+
             command_and_args: list[str] = [args.command_, "--http"]
-            # if args.port_ != 8081:
-            #     command_and_args.append("-p")
-            #     command_and_args.append(args.port_)
+            if args.port_ != 8081:
+                command_and_args.append("-p")
+                command_and_args.append(args.port_)
             if args.languageModel_:
                 command_and_args.append("--languageModel")
                 command_and_args.append(args.languageModel_)
@@ -158,7 +161,7 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
     payload = {'language': server.language_, 'text': doc_content}
 
     try:
-        r = requests.get(r'http://localhost:8081/v2/check', params=payload)
+        r = requests.get(r'http://localhost:' + server.port_ + '/v2/check', params=payload)
         results = r.json()
         _publish_diagnostics(server, params.text_document.uri, doc_content, results)
     except Exception as e:
@@ -173,7 +176,7 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
     payload = {'language': server.language_, 'text': doc_content}
 
     try:
-        r = requests.get(r'http://localhost:8081/v2/check', params=payload)
+        r = requests.get(r'http://localhost:' + server.port_ + '/v2/check', params=payload)
         results = r.json()
         _publish_diagnostics(server, params.text_document.uri, doc_content, results)
     except Exception as e:
@@ -199,10 +202,10 @@ def add_arguments(parser):
         "--word2vecModel", type=str, dest="word2vecModel_", default="",
         help="Optional directory containing word2vec neural net data."
     )
-    # parser.add_argument(
-    #     "-p", "--port", type=int, dest="port_", default=8081,
-    #     help="Use this port for LanguageTool. Default is 8081. "
-    # )
+    parser.add_argument(
+        "-p", "--port", type=str, dest="port_", default="8081",
+        help="Use this port for LanguageTool. Default is 8081. "
+    )
 
 
 def main():
