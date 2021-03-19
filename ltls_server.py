@@ -38,7 +38,7 @@ from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                              UnregistrationParams)
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.DEBUG, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.WARNING, filemode="w")
 
 
 def _find_line_ends(content: str):
