@@ -38,7 +38,7 @@ from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                              UnregistrationParams)
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.WARNING, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.DEBUG, filemode="w")
 
 
 def _find_line_ends(content: str):
@@ -139,12 +139,22 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
 
 
 # TEXT_DOCUMENT_DID_SAVE
-@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
+@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(includeText=True))
 async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
-    xxx = urlparse(params.text_document.uri, scheme="file")
 
-    doc_content = open(xxx.path, mode='r', encoding='utf-8').read()
+    # when we registered this function we told the client that we want
+    # the text when the file is saved.  If we don't get it we'll fall
+    # back to reading the file.
+
+    doc_content: str = ""
+    if params.text:
+        doc_content = params.text
+    else:
+        fname = urlparse(params.text_document.uri, scheme="file")
+        with open(fname.path, mode='r', encoding='utf-8') as saved_file:
+            doc_content = saved_file.read()
+
     payload = {'language': server.language_, 'text': doc_content}
 
     try:
