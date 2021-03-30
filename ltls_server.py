@@ -21,7 +21,7 @@ import os
 import asyncio
 import json
 import subprocess
-import requests
+import urllib3
 
 import time
 
@@ -38,7 +38,7 @@ from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
                              UnregistrationParams)
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.WARNING, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.DEBUG, filemode="w")
 
 
 def _find_line_ends(content: str):
@@ -78,6 +78,7 @@ class LanguageToolLanguageServer(LanguageServer):
         self.languagetool_: subprocess.Popen = None
         self.language_: str = None
         self.port_: str = None
+        self.http_ = urllib3.PoolManager()
 
     def __del__(self):
         self.languagetool_.kill()
@@ -107,7 +108,7 @@ class LanguageToolLanguageServer(LanguageServer):
                                                   stdout=subprocess.PIPE,
                                                   stderr=subprocess.PIPE
                                                   )
-            time.sleep(3.0)         # we need to give some time for the server to start.
+            time.sleep(2.0)         # we need to give some time for the server to start.
             # outs, errs = self.languagetool_.communicate()
         except Exception as e:
             self.show_message('Error ocurred: {}'.format(e))
@@ -159,11 +160,11 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
             doc_content = saved_file.read()
 
     payload = {'language': server.language_, 'text': doc_content}
+    url = 'http://localhost:' + server.port_ + '/v2/check'
 
     try:
-        r = requests.get(r'http://localhost:' + server.port_ + '/v2/check', params=payload)
-        results = r.json()
-        _publish_diagnostics(server, params.text_document.uri, doc_content, results)
+        req = server.http_.request('GET', url, fields=payload, retries=urllib3.Retry(connect=5, backoff_factor=0.3))
+        _publish_diagnostics(server, params.text_document.uri, doc_content, json.loads(req.data.decode('utf-8')))
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
@@ -174,11 +175,11 @@ async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocume
     """Actions run on textDocument/didOpen."""
     doc_content = params.text_document.text
     payload = {'language': server.language_, 'text': doc_content}
+    url = 'http://localhost:' + server.port_ + '/v2/check'
 
     try:
-        r = requests.get(r'http://localhost:' + server.port_ + '/v2/check', params=payload)
-        results = r.json()
-        _publish_diagnostics(server, params.text_document.uri, doc_content, results)
+        req = server.http_.request('GET', url, fields=payload, retries=urllib3.Retry(connect=5, backoff_factor=0.3))
+        _publish_diagnostics(server, params.text_document.uri, doc_content, json.loads(req.data.decode('utf-8')))
     except Exception as e:
         server.show_message('Error ocurred: {}'.format(e))
 
