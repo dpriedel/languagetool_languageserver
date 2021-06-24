@@ -16,9 +16,6 @@
 ############################################################################
 import argparse
 import logging
-import sys
-import os
-import asyncio
 import json
 import subprocess
 import urllib3
@@ -28,17 +25,16 @@ import time
 from urllib.parse import urlparse
 
 from pygls.lsp.methods import (TEXT_DOCUMENT_DID_SAVE,
-                               TEXT_DOCUMENT_DID_CLOSE, TEXT_DOCUMENT_DID_OPEN)
-from pygls.lsp.types import (ConfigurationItem, ConfigurationParams, Diagnostic,
+                               TEXT_DOCUMENT_DID_OPEN)
+from pygls.lsp.types import (Diagnostic,
                              DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
                              DidSaveTextDocumentParams,
-                             DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-                             MessageType, Position, Range, Registration,
-                             RegistrationParams, Unregistration,
-                             UnregistrationParams)
+                             DidOpenTextDocumentParams,
+                             Position, Range
+                             )
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.INFO, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
 
 
 def _find_line_ends(content: str):
