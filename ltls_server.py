@@ -15,8 +15,9 @@
 # limitations under the License.                                           #
 ############################################################################
 import argparse
-import logging
+import glob
 import json
+import logging
 import subprocess
 import urllib3
 
@@ -24,7 +25,7 @@ import time
 
 from urllib.parse import urlparse
 
-from pygls.lsp.methods import (TEXT_DOCUMENT_DID_SAVE,
+from pygls.lsp.methods import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN,
                                TEXT_DOCUMENT_DID_OPEN)
 from pygls.lsp.types import (Diagnostic,
                              DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
@@ -36,6 +37,8 @@ from pygls.server import LanguageServer
 
 logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
 
+LANGTOOL_PATH = "/usr/share/java/languagetool/"
+CLASS_PATH = None
 
 def _find_line_ends(content: str):
     results: list[int] = []
@@ -77,18 +80,28 @@ class LanguageToolLanguageServer(LanguageServer):
         self.http_ = urllib3.PoolManager()
 
     def __del__(self):
-        self.languagetool_.kill()
-        outs, errs = self.languagetool_.communicate()
+        self.ShutdownLanguageTool()
+        # self.languagetool_.kill()
+        # outs, errs = self.languagetool_.communicate()
 
     def StartLanguageTool(self, args):
         try:
             # we need to capture stdout, stderr because the languagetool server
             # emits several messages and we don't want them to go to the LSP client.
 
+            # need to build our class path so we can call languagetool directly ourselves
+            # instead of using the provided script.  Need to remove the intermediate process 
+            # so we can properly shutdown the server from Neovim's LSP code. 
+
+            jars = glob.glob(LANGTOOL_PATH + "*.jar") 
+            CLASS_PATH = "/usr/share/languagetool:" + ':'.join(jars)
+
             self.language_ = args.language_
             self.port_ = args.port_
+            
+            command_and_args = ["java", "-cp", CLASS_PATH, "org.languagetool.server.HTTPServer"]
 
-            command_and_args: list[str] = [args.command_, "--http"]
+            # command_and_args: list[str] = [args.command_, "--http"]
             if args.port_ != 8081:
                 command_and_args.append("-p")
                 command_and_args.append(args.port_)
@@ -111,6 +124,14 @@ class LanguageToolLanguageServer(LanguageServer):
 
         self.start_io()
 
+    def ShutdownLanguageTool(self):
+        # logger = logging.getLogger()
+        # logger.debug("got shutdown request.")
+        if self.languagetool_:
+            self.languagetool_.kill()
+            outs, errs = self.languagetool_.communicate()
+            self.languagetool_ = None
+            # self.show_message("msg = " + outs + " errs = " + errs)
 
 ltls_server = LanguageToolLanguageServer()
 
@@ -137,6 +158,14 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
         diagnostics.append(d)
     server.publish_diagnostics(uri, diagnostics)
 
+
+# SHUTDOWN
+@ltls_server.feature(SHUTDOWN)
+def shutdown(*params):
+    """Actions run on shutdown."""
+
+    ltls_server.ShutdownLanguageTool()
+    super.shutdown(params)
 
 # TEXT_DOCUMENT_DID_SAVE
 @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(includeText=True))
