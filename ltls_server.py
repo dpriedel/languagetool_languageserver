@@ -25,20 +25,23 @@ import time
 
 from urllib.parse import urlparse
 
-from pygls.lsp.methods import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN,
-                               TEXT_DOCUMENT_DID_OPEN)
-from pygls.lsp.types import (Diagnostic,
-                             DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
-                             DidSaveTextDocumentParams,
-                             DidOpenTextDocumentParams,
-                             Position, Range
-                             )
+from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN,
+                              TEXT_DOCUMENT_DID_OPEN)
+from lsprotocol.types import (Diagnostic,
+                              DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
+                              DidSaveTextDocumentParams,
+                              DidOpenTextDocumentParams,
+                              Position, Range
+                              )
+from pygls.capabilities import get_capability
+from pygls.protocol import LanguageServerProtocol, lsp_method
 from pygls.server import LanguageServer
 
 logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
 
 LANGTOOL_PATH = "/usr/share/java/languagetool/"
 CLASS_PATH = None
+
 
 def _find_line_ends(content: str):
     results: list[int] = []
@@ -64,7 +67,7 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, i
 
     col = offset - offsets[line - 1] if line > 0 else offset + 1
 
-    return(line, col - 1)
+    return (line, col - 1)
 
 
 class LanguageToolLanguageServer(LanguageServer):
@@ -72,7 +75,7 @@ class LanguageToolLanguageServer(LanguageServer):
     CONFIGURATION_SECTION = 'ltlsServer'
 
     def __init__(self):
-        super().__init__()
+        super().__init__("ltlsServer", "0.9")
 
         self.languagetool_: subprocess.Popen = None
         self.language_: str = None
@@ -90,15 +93,15 @@ class LanguageToolLanguageServer(LanguageServer):
             # emits several messages and we don't want them to go to the LSP client.
 
             # need to build our class path so we can call languagetool directly ourselves
-            # instead of using the provided script.  Need to remove the intermediate process 
-            # so we can properly shutdown the server from Neovim's LSP code. 
+            # instead of using the provided script.  Need to remove the intermediate process
+            # so we can properly shutdown the server from Neovim's LSP code.
 
-            jars = glob.glob(LANGTOOL_PATH + "*.jar") 
+            jars = glob.glob(LANGTOOL_PATH + "*.jar")
             CLASS_PATH = "/usr/share/languagetool:" + ':'.join(jars)
 
             self.language_ = args.language_
             self.port_ = args.port_
-            
+
             command_and_args = ["java", "-cp", CLASS_PATH, "org.languagetool.server.HTTPServer"]
 
             # command_and_args: list[str] = [args.command_, "--http"]
@@ -132,6 +135,7 @@ class LanguageToolLanguageServer(LanguageServer):
             outs, errs = self.languagetool_.communicate()
             self.languagetool_ = None
             # self.show_message("msg = " + outs + " errs = " + errs)
+
 
 ltls_server = LanguageToolLanguageServer()
 
@@ -168,8 +172,11 @@ def shutdown(*params):
     super.shutdown(params)
 
 # TEXT_DOCUMENT_DID_SAVE
-@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(includeText=True))
-async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
+
+
+# @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(True))
+@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
+async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
 
     # when we registered this function we told the client that we want
@@ -196,9 +203,10 @@ async def did_save(server: LanguageToolLanguageServer, params: DidSaveTextDocume
 
 # TEXT_DOCUMENT_DID_OPEN
 @ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
-async def did_open(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
+async def didOpen(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
-    doc_content = params.text_document.text
+    # doc_content = params.text_document.text
+    doc_content = server.workspace.get_document(params.text_document.uri)
     payload = {'language': server.language_, 'text': doc_content}
     url = 'http://localhost:' + server.port_ + '/v2/check'
 
