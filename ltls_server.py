@@ -25,7 +25,7 @@ import time
 
 from urllib.parse import urlparse
 
-from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN, EXIT,
+from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, EXIT,
                               TEXT_DOCUMENT_DID_OPEN)
 from lsprotocol.types import (Diagnostic,
                               DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
@@ -33,11 +33,11 @@ from lsprotocol.types import (Diagnostic,
                               DidOpenTextDocumentParams,
                               Position, Range
                               )
-from pygls.capabilities import get_capability
-from pygls.protocol import LanguageServerProtocol, lsp_method
+# from pygls.capabilities import get_capability
+# from pygls.protocol import LanguageServerProtocol, lsp_method
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.INFO, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
 
 LANGTOOL_PATH = "/usr/share/java/languagetool/"
 CLASS_PATH = None
@@ -62,7 +62,7 @@ def _convert_offset_to_line_col(offsets: list[int], offset: int) -> tuple[int, i
     try:
         while offsets[line] < offset:
             line += 1
-    except IndexError as e:
+    except IndexError:
         pass
 
     col = offset - offsets[line - 1] if line > 0 else offset + 1
@@ -83,9 +83,8 @@ class LanguageToolLanguageServer(LanguageServer):
         self.http_ = urllib3.PoolManager()
 
     def __del__(self):
+        # just in case...
         self.ShutdownLanguageTool()
-        # self.languagetool_.kill()
-        # outs, errs = self.languagetool_.communicate()
 
     def StartLanguageTool(self, args):
         try:
@@ -163,24 +162,19 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
     server.publish_diagnostics(uri, diagnostics)
 
 
-# SHUTDOWN
-# @ltls_server.feature(SHUTDOWN)
-# def lsp_shutdown(*params):
-#     """Actions run on shutdown."""
-#
-#     ltls_server.ShutdownLanguageTool(*params)
-
 @ltls_server.feature(EXIT)
 def exit(*params):
     """Actions run on shutdown."""
 
-    ltls_server.ShutdownLanguageTool()
+    # when we get here, we know we are really all done so it
+    # is safe to shutdown LanguageTool.
 
-#
-# TEXT_DOCUMENT_DID_SAVE
+    ltls_server.ShutdownLanguageTool()
 
 
 # @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(include_text=True))
+# I can't figure out how to get the above to work -- it errors out and the server doesn't start.
+
 @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
 async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
@@ -211,7 +205,8 @@ async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumen
 @ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
 async def didOpen(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
-    # doc_content = params.text_document.text
+
+    # get the actual text contained in the Document...
     doc_content = server.workspace.get_document(params.text_document.uri).source
     payload = {'language': server.language_, 'text': doc_content}
     url = 'http://localhost:' + server.port_ + '/v2/check'
