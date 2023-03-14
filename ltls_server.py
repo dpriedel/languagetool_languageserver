@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3.11
 
 ############################################################################
 #                                                                          #
@@ -25,7 +25,7 @@ import time
 
 from urllib.parse import urlparse
 
-from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN,
+from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, SHUTDOWN, EXIT,
                               TEXT_DOCUMENT_DID_OPEN)
 from lsprotocol.types import (Diagnostic,
                               DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
@@ -37,7 +37,7 @@ from pygls.capabilities import get_capability
 from pygls.protocol import LanguageServerProtocol, lsp_method
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.INFO, filemode="w")
 
 LANGTOOL_PATH = "/usr/share/java/languagetool/"
 CLASS_PATH = None
@@ -74,8 +74,8 @@ class LanguageToolLanguageServer(LanguageServer):
 
     CONFIGURATION_SECTION = 'ltlsServer'
 
-    def __init__(self):
-        super().__init__("ltlsServer", "0.9")
+    def __init__(self, *args):
+        super().__init__(*args)
 
         self.languagetool_: subprocess.Popen = None
         self.language_: str = None
@@ -137,7 +137,7 @@ class LanguageToolLanguageServer(LanguageServer):
             # self.show_message("msg = " + outs + " errs = " + errs)
 
 
-ltls_server = LanguageToolLanguageServer()
+ltls_server = LanguageToolLanguageServer("ltlsServer", "0.9")
 
 
 def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_content: str, results: dict):
@@ -164,17 +164,23 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
 
 
 # SHUTDOWN
-@ltls_server.feature(SHUTDOWN)
-def shutdown(*params):
+# @ltls_server.feature(SHUTDOWN)
+# def lsp_shutdown(*params):
+#     """Actions run on shutdown."""
+#
+#     ltls_server.ShutdownLanguageTool(*params)
+
+@ltls_server.feature(EXIT)
+def exit(*params):
     """Actions run on shutdown."""
 
     ltls_server.ShutdownLanguageTool()
-    super.shutdown(params)
 
+#
 # TEXT_DOCUMENT_DID_SAVE
 
 
-# @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(True))
+# @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(include_text=True))
 @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
 async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
@@ -206,7 +212,7 @@ async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumen
 async def didOpen(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
     # doc_content = params.text_document.text
-    doc_content = server.workspace.get_document(params.text_document.uri)
+    doc_content = server.workspace.get_document(params.text_document.uri).source
     payload = {'language': server.language_, 'text': doc_content}
     url = 'http://localhost:' + server.port_ + '/v2/check'
 
