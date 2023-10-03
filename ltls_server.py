@@ -25,19 +25,20 @@ import time
 
 from urllib.parse import urlparse
 
-from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, EXIT,
-                              TEXT_DOCUMENT_DID_OPEN)
-from lsprotocol.types import (Diagnostic,
-                              DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
-                              DidSaveTextDocumentParams,
-                              DidOpenTextDocumentParams,
-                              Position, Range
-                              )
+# from lsprotocol.types import (TEXT_DOCUMENT_DID_SAVE, EXIT,
+#                               TEXT_DOCUMENT_DID_OPEN)
+# from lsprotocol.types import (Diagnostic,
+#                               DiagnosticSeverity, TextDocumentSaveRegistrationOptions,
+#                               DidSaveTextDocumentParams,
+#                               DidOpenTextDocumentParams,
+#                               Position, Range
+#                               )
+from lsprotocol import types as lsp
 # from pygls.capabilities import get_capability
 # from pygls.protocol import LanguageServerProtocol, lsp_method
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.INFO, filemode="w")
 
 LANGTOOL_PATH = "/usr/share/java/languagetool/"
 CLASS_PATH = None
@@ -149,20 +150,20 @@ def _publish_diagnostics(server: LanguageToolLanguageServer, uri: str, doc_conte
     for error in results["matches"]:
         offset = int(error["offset"])
         line, col = _convert_offset_to_line_col(offsets, offset)
-        d = Diagnostic(
-                range=Range(
-                            start=Position(line=line, character=col),
-                            end=Position(line=line, character=col + int(error["length"]))
+        d = lsp.Diagnostic(
+                range=lsp.Range(
+                            start=lsp.Position(line=line, character=col),
+                            end=lsp.Position(line=line, character=col + int(error["length"]))
                          ),
                 message=error["message"] + ' ' + error["rule"]["id"],
-                severity=DiagnosticSeverity.Error,
+                severity=lsp.DiagnosticSeverity.Error,
                 source="ltls"
              )
         diagnostics.append(d)
     server.publish_diagnostics(uri, diagnostics)
 
 
-@ltls_server.feature(EXIT)
+@ltls_server.feature(lsp.EXIT)
 def exit(*params):
     """Actions run on shutdown."""
 
@@ -172,11 +173,11 @@ def exit(*params):
     ltls_server.ShutdownLanguageTool()
 
 
-# @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE, TextDocumentSaveRegistrationOptions(include_text=True))
+# @ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
 # I can't figure out how to get the above to work -- it errors out and the server doesn't start.
 
-@ltls_server.feature(TEXT_DOCUMENT_DID_SAVE)
-async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumentParams):
+@ltls_server.feature(lsp.TEXT_DOCUMENT_DID_SAVE, lsp.SaveOptions(include_text=True))
+async def did_save(server: LanguageToolLanguageServer, params: lsp.DidSaveTextDocumentParams):
     """Actions run on textDocument/didSave."""
 
     # when we registered this function we told the client that we want
@@ -202,8 +203,8 @@ async def didSave(server: LanguageToolLanguageServer, params: DidSaveTextDocumen
 
 
 # TEXT_DOCUMENT_DID_OPEN
-@ltls_server.feature(TEXT_DOCUMENT_DID_OPEN)
-async def didOpen(server: LanguageToolLanguageServer, params: DidOpenTextDocumentParams):
+@ltls_server.feature(lsp.TEXT_DOCUMENT_DID_OPEN)
+async def did_open(server: LanguageToolLanguageServer, params: lsp.DidOpenTextDocumentParams):
     """Actions run on textDocument/didOpen."""
 
     # get the actual text contained in the Document...
