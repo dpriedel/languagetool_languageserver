@@ -76,6 +76,9 @@ class LanguageToolLanguageServer(LanguageServer):
         # just in case...
         self.ShutdownLanguageTool()
 
+    def StillAlive(self):
+        return self.languagetool_ is not None
+
     def StartLanguageTool(self, args):
         try:
             # we need to capture stdout, stderr because the languagetool server
@@ -109,6 +112,7 @@ class LanguageToolLanguageServer(LanguageServer):
                 command_and_args.append("--word2vecModel")
                 command_and_args.append(args.word2vecModel_)
 
+            # print(command_and_args)
             self.languagetool_ = subprocess.Popen(
                 command_and_args,
                 stdin=subprocess.PIPE,
@@ -121,6 +125,9 @@ class LanguageToolLanguageServer(LanguageServer):
             self.show_message("Error ocurred: {}".format(e))
 
         self.start_io()
+
+    def shutdown(self):
+        self.ShutdownLanguageTool()
 
     def ShutdownLanguageTool(self):
         # logger = logging.getLogger()
@@ -135,58 +142,25 @@ class LanguageToolLanguageServer(LanguageServer):
 ltls_server = LanguageToolLanguageServer("ltlsServer", "0.9")
 
 
-def _publish_diagnostics(
-    server: LanguageToolLanguageServer, uri: str, doc_content: str, results: dict
-):
-    """Helper function to publish diagnostics for a file.
-    results is already in json format from requests library."""
-
-    offsets = _find_line_ends(doc_content)
-
-    diagnostics = []
-    for error in results["matches"]:
-        offset = int(error["offset"])
-        line, col = _convert_offset_to_line_col(offsets, offset)
-        d = lsp.Diagnostic(
-            range=lsp.Range(
-                start=lsp.Position(line=line, character=col),
-                end=lsp.Position(line=line, character=col + int(error["length"])),
-            ),
-            message=error["message"] + " " + error["rule"]["id"],
-            severity=lsp.DiagnosticSeverity.Error,
-            source="ltls",
-        )
-        diagnostics.append(d)
-    server.publish_diagnostics(uri, diagnostics)
-
-
-@ltls_server.feature(lsp.EXIT)
-def exit(*params):
-    """Actions run on shutdown."""
-
-    # when we get here, we know we are really all done so it
-    # is safe to shutdown LanguageTool.
-
-    ltls_server.ShutdownLanguageTool()
-
-
-@ltls_server.feature(lsp.TEXT_DOCUMENT_DID_SAVE, lsp.SaveOptions(include_text=True))
-async def did_save(
-    server: LanguageToolLanguageServer, params: lsp.DidSaveTextDocumentParams
-):
-    """Actions run on textDocument/didSave."""
-
-    # when we registered this function we told the client that we want
-    # the text when the file is saved.  If we don't get it we'll fall
-    # back to reading the file.
+def _validate(server, params):
+    # server.show_message_log("Validating text...")
 
     doc_content: str = ""
-    if params.text:
+    if hasattr(params, "text") and params.text:
         doc_content = params.text
+        server.show_message_log("Got text...")
     else:
-        fname = urlparse(params.text_document.uri, scheme="file")
-        with open(fname.path, mode="r", encoding="utf-8") as saved_file:
-            doc_content = saved_file.read()
+        text_doc = server.workspace.get_text_document(params.text_document.uri)
+        doc_content = text_doc.source
+
+    diagnostics = _validate_text(server, doc_content) if doc_content else []
+    server.publish_diagnostics(params.text_document.uri, diagnostics)
+
+
+def _validate_text(server, doc_content):
+    """Validates text file."""
+
+    diagnostics = []
 
     payload = {"language": server.language_, "text": doc_content}
     url = "http://localhost:" + server.port_ + "/v2/check"
@@ -198,14 +172,71 @@ async def did_save(
             fields=payload,
             retries=urllib3.Retry(connect=5, backoff_factor=0.3),
         )
-        _publish_diagnostics(
-            server,
-            params.text_document.uri,
-            doc_content,
-            json.loads(req.data.decode("utf-8")),
-        )
+
+        results = json.loads(req.data.decode("utf-8"))
+
+        offsets = _find_line_ends(doc_content)
+
+        for error in results["matches"]:
+            offset = int(error["offset"])
+            line, col = _convert_offset_to_line_col(offsets, offset)
+            d = lsp.Diagnostic(
+                range=lsp.Range(
+                    start=lsp.Position(line=line, character=col),
+                    end=lsp.Position(line=line, character=col + int(error["length"])),
+                ),
+                message=error["message"] + " " + error["rule"]["id"],
+                severity=lsp.DiagnosticSeverity.Error,
+                source="ltls",
+            )
+            diagnostics.append(d)
+
     except Exception as e:
         server.show_message("Error ocurred: {}".format(e))
+
+    return diagnostics
+
+
+# @ltls_server.feature(lsp.shutdown)
+# def shutdown():
+#     """actions run on shutdown."""
+#
+#     # when we get here, we know we are really all done so it
+#     # is safe to shutdown languagetool.
+#
+#     ltls_server.shutdownlanguagetool()
+#     return
+
+
+@ltls_server.feature(lsp.EXIT)
+def exit():
+    """Actions run on shutdown."""
+
+    # when we get here, we know we are really all done so it
+    # is safe to shutdown LanguageTool.
+
+    if ltls_server.StillAlive() == True:
+        ltls_server.ShutdownLanguageTool()
+
+
+@ltls_server.feature(lsp.TEXT_DOCUMENT_DID_SAVE, lsp.SaveOptions(include_text=True))
+async def did_save(
+    server: LanguageToolLanguageServer, params: lsp.DidSaveTextDocumentParams
+):
+    """Actions run on textDocument/didSave."""
+    server.show_message("Text Document Did Save")
+
+    # when we registered this function we told the client that we want
+    # the text when the file is saved.  If we don't get it we'll fall
+    # back to reading the file.
+
+    _validate(server, params)
+
+
+@ltls_server.feature(lsp.TEXT_DOCUMENT_DID_CHANGE)
+def did_change(ls, params: lsp.DidChangeTextDocumentParams):
+    """Text document did change notification."""
+    _validate(ls, params)
 
 
 # TEXT_DOCUMENT_DID_OPEN
@@ -215,26 +246,8 @@ async def did_open(
 ):
     """Actions run on textDocument/didOpen."""
 
-    # get the actual text contained in the Document...
-    doc_content = server.workspace.get_document(params.text_document.uri).source
-    payload = {"language": server.language_, "text": doc_content}
-    url = "http://localhost:" + server.port_ + "/v2/check"
-
-    try:
-        req = server.http_.request(
-            "GET",
-            url,
-            fields=payload,
-            retries=urllib3.Retry(connect=5, backoff_factor=0.3),
-        )
-        _publish_diagnostics(
-            server,
-            params.text_document.uri,
-            doc_content,
-            json.loads(req.data.decode("utf-8")),
-        )
-    except Exception as e:
-        server.show_message("Error ocurred: {}".format(e))
+    server.show_message("Text Document Did Open")
+    _validate(server, params)
 
 
 def add_arguments(parser):
