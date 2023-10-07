@@ -20,15 +20,12 @@ import json
 import logging
 import subprocess
 import time
-from urllib.parse import urlparse
 
 import urllib3
 from lsprotocol import types as lsp
-# from pygls.capabilities import get_capability
-# from pygls.protocol import LanguageServerProtocol, lsp_method
 from pygls.server import LanguageServer
 
-logging.basicConfig(filename="/tmp/pyltls.log", level=logging.DEBUG, filemode="w")
+logging.basicConfig(filename="/tmp/pyltls.log", level=logging.ERROR, filemode="w")
 
 LANGTOOL_PATH = "/usr/share/java/languagetool/"
 CLASS_PATH = None
@@ -128,6 +125,7 @@ class LanguageToolLanguageServer(LanguageServer):
 
     def shutdown(self):
         self.ShutdownLanguageTool()
+        super().shutdown()
 
     def ShutdownLanguageTool(self):
         # logger = logging.getLogger()
@@ -148,7 +146,7 @@ def _validate(server, params):
     doc_content: str = ""
     if hasattr(params, "text") and params.text:
         doc_content = params.text
-        server.show_message_log("Got text...")
+        # server.show_message_log("Got text...")
     else:
         text_doc = server.workspace.get_text_document(params.text_document.uri)
         doc_content = text_doc.source
@@ -195,17 +193,6 @@ def _validate_text(server, doc_content):
         server.show_message("Error ocurred: {}".format(e))
 
     return diagnostics
-
-
-# @ltls_server.feature(lsp.shutdown)
-# def shutdown():
-#     """actions run on shutdown."""
-#
-#     # when we get here, we know we are really all done so it
-#     # is safe to shutdown languagetool.
-#
-#     ltls_server.shutdownlanguagetool()
-#     return
 
 
 @ltls_server.feature(lsp.EXIT)
